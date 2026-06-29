@@ -20,5 +20,5 @@ desktop.ini
 .idea/
 .vscode/
 
-# 주의: data/vectordb/ 는 의도적으로 커밋합니다 (재임베딩 비용 절약).
+# 주의: data/05_vectordb/ 는 의도적으로 커밋합니다 (재임베딩 비용 절약).
 #       단일 파일 100MB 초과 시 Git LFS 사용을 검토하세요.
