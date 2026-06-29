@@ -1,4 +1,4 @@
-# /skn-merge — SKN org 저장소 동기화
+# /skn-remote — SKN org 저장소 동기화
 
 현재 `develop`을 `SKNETWORKS-FAMILY-AICAMP/SKN30-3rd-4Team` main 브랜치에 push한다.
 
