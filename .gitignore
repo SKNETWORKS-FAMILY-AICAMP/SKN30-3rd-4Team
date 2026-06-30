@@ -10,6 +10,7 @@ __pycache__/
 
 # 환경 변수 (키 포함 — 절대 커밋 금지)
 .env
+.streamlit/secrets.toml
 
 # OS 생성 파일
 .DS_Store
