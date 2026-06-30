@@ -46,8 +46,9 @@ git fetch origin develop
 
 ### 2. 새 브랜치 생성
 ```bash
-git checkout origin/develop -b <prefix>/<브랜치명>
+git checkout -b <prefix>/<브랜치명> origin/develop
 ```
+항상 원격 최신 develop을 받아 그 위에 분기한다 — 로컬 develop에 merge하지 않으므로 충돌이 발생하지 않는다.
 브랜치명은 작업 개요를 영문 kebab-case로 요약.
 애매하면 사용자에게 확인.
 
@@ -65,3 +66,4 @@ git checkout origin/develop -b <prefix>/<브랜치명>
 ## Common Mistakes
 - 모호도 게이트 없이 바로 브랜치 생성 금지
 - 추측으로 모호한 요구사항 채워넣기 금지
+- 충돌·divergence(꼬임) 발생 시 자동 해결 금지 → 즉시 멈추고 사용자 확인

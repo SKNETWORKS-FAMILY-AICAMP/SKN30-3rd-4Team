@@ -36,8 +36,11 @@ git fetch origin develop
 ### 2. 새 브랜치 생성
 
 ```bash
-git checkout origin/develop -b <prefix>/<브랜치명>
+git checkout -b <prefix>/<브랜치명> origin/develop
 ```
+
+> 항상 원격 최신 develop을 받아 그 위에 분기한다(`fetch` 후 `origin/develop` 기준).
+> 로컬 develop에 merge하지 않으므로 충돌이 발생하지 않는다.
 
 **prefix** — 작업 성격에 맞게 선택 (Conventional Commits 기준):
 

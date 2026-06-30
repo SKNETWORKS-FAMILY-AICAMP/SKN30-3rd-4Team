@@ -22,9 +22,10 @@ description: Use when creating a pull request to the develop branch on GitHub af
 
 ### 1. 브랜치 상태 확인
 ```bash
+git fetch origin develop   # 기준 브랜치 최신화
 git status
-git log develop..HEAD --oneline
-git diff develop...HEAD
+git log origin/develop..HEAD --oneline
+git diff origin/develop...HEAD
 ```
 커밋되지 않은 변경사항 있으면 멈추고 `/commit` 먼저 안내.
 
@@ -60,11 +61,13 @@ EOF
 ### 5. PR 생성 후
 ```bash
 git checkout develop
-git pull origin develop
+git pull --ff-only origin develop   # fast-forward 불가(로컬 develop 갈라짐)면 거부 → 중단
 ```
-사용자에게 PR URL + CodeRabbit 자동 리뷰 예정 + "머지는 GitHub 웹에서" 안내.
+`--ff-only`가 거부되면 자동 머지 만들지 말고 멈춰, "로컬 develop이 원격과 갈라짐 — 수동 확인" 안내.
+이어서 PR URL + CodeRabbit 자동 리뷰 예정 + "머지는 GitHub 웹에서" 안내.
 
 ## Common Mistakes
 - `gh pr merge` 사용 금지 — 머지는 GitHub 웹에서만
 - main으로 직접 PR 금지 — base는 항상 develop
 - body를 HEREDOC 없이 전달하면 포맷 깨짐
+- 충돌·divergence(꼬임) 발생 시 자동 해결 금지 → 즉시 멈추고 사용자 확인

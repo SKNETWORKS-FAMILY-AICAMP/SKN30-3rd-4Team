@@ -12,7 +12,7 @@
 현재 브랜치 == main 또는 develop?
   → 1. 사용자에게 작업 개요를 물어본다
   → 2. git fetch origin develop
-  → 3. git checkout origin/develop -b <prefix>/<브랜치명>
+  → 3. git checkout -b <prefix>/<브랜치명> origin/develop
   → 4. 브랜치 생성 완료 보고 후 아래 커밋 절차(1~6) 계속 진행
 ```
 
@@ -45,7 +45,7 @@ git diff --cached # staged
 절대 스테이징하지 않을 것:
 
 - `.env` — API 키 포함 환경 변수
-- `.claude/**` — Claude Code 설정
+- `.claude/settings.local.json` 등 로컬·비밀 설정 — `.claude/commands/`(슬래시 커맨드)는 추적 대상이므로 포함
 - `__pycache__/`, `*.pyc` — Python 캐시
 - `.venv/` — 가상환경
 - `.ruff_cache/`, `.pytest_cache/` — 도구 캐시
@@ -93,24 +93,28 @@ EOF
 같은 브랜치를 팀원과 공유할 수 있으므로 push 전 반드시 동기화한다.
 
 ```bash
-git fetch
-git rebase origin/<현재 브랜치>
+git fetch origin
+
+# 원격에 같은 브랜치가 있을 때만 동기화 (없으면 첫 푸시이므로 건너뜀)
+if git ls-remote --exit-code --heads origin <현재 브랜치> >/dev/null 2>&1; then
+  git pull --rebase
+fi
 ```
 
-> `rebase origin/<현재 브랜치>`는 **같은 브랜치**의 원격 최신 상태를 내 커밋 아래에 깔아주는 것.
+> `git pull --rebase`는 **같은 브랜치**의 원격 최신 상태를 내 커밋 아래에 깔아주는 것.
 > 커밋이 사라지지 않고, 히스토리가 깔끔하게 유지된다.
+> develop 통합(rebase origin/develop)은 여기서 하지 않는다 — PR 시점에만.
 
 ```bash
-# 푸시
-git push
-# upstream 미설정 시 (첫 push):
+# 푸시 (첫 push: upstream 설정)
 git push -u origin <현재 브랜치>
+# 이후 푸시: git push
 
 # 검증
 git status   # "up to date with 'origin/<브랜치>'" 확인
 ```
 
-- **충돌 발생 시**: 자동 해결 금지 → 즉시 멈추고 사용자에게 확인 후 진행
+- **충돌 발생 시**: 자동 해결 금지 → `git rebase --abort`로 되돌리고 즉시 멈춰 사용자에게 확인 후 진행
 - **푸시까지 완료가 목표** — 로컬 커밋만으로 끝내지 말 것
 
 ---

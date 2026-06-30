@@ -15,8 +15,9 @@ git status
 커밋되지 않은 변경사항이 있으면 사용자에게 알리고 멈춘다. (`/commit` 먼저 실행 안내)
 
 ```bash
-git log develop..HEAD --oneline   # 포함될 커밋 목록
-git diff develop...HEAD           # 전체 변경 내용
+git fetch origin develop                 # 기준 브랜치 최신화
+git log origin/develop..HEAD --oneline   # 포함될 커밋 목록
+git diff origin/develop...HEAD           # 전체 변경 내용
 ```
 
 ---
@@ -72,8 +73,10 @@ PR 생성 후 develop으로 이동:
 
 ```bash
 git checkout develop
-git pull origin develop
+git pull --ff-only origin develop   # fast-forward 불가(로컬 develop 갈라짐)면 거부 → 중단
 ```
+
+`--ff-only`가 거부되면 자동 머지 만들지 말고 멈추고 "로컬 develop이 원격과 갈라짐 — 수동 확인" 안내.
 
 사용자에게 보고:
 - PR URL
@@ -89,3 +92,4 @@ git pull origin develop
 - **body는 HEREDOC으로 전달** (포맷 유지)
 - **`gh pr merge` 절대 금지** — 머지는 GitHub 웹에서 사람이 직접 수행
 - **브랜치 삭제·태그 생성은 사용자가 명시적으로 지시할 때만 수행**
+- **충돌·divergence(꼬임) 발생 시 자동 해결 금지** → 즉시 멈추고 사용자 확인

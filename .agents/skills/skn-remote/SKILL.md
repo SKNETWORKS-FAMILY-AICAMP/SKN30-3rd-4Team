@@ -15,12 +15,16 @@ description: Use when syncing origin/develop to SKNETWORKS-FAMILY-AICAMP org rep
 ## Implementation
 
 ### 1. org 리모트 확인
+`org` 리모트가 없으면 추가하고, 있으면 URL이 기대 저장소와 일치하는지 검증한다.
+다르면 `set-url`로 바로잡은 뒤 진행한다 (잘못된 저장소로 push 방지).
 ```bash
-git remote -v
-```
-`org` 리모트가 없으면 추가:
-```bash
-git remote add org https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN30-3rd-4Team.git
+EXPECTED="https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN30-3rd-4Team.git"
+if git remote get-url org >/dev/null 2>&1; then
+  [ "$(git remote get-url org)" = "$EXPECTED" ] || git remote set-url org "$EXPECTED"
+else
+  git remote add org "$EXPECTED"
+fi
+git remote -v   # org URL 최종 확인
 ```
 
 ### 2. 최신 develop 가져오기
