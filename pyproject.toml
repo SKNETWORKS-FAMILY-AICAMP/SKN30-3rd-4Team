@@ -26,11 +26,13 @@ dependencies = [
     "pytesseract>=0.3.13",
     "pdf2image>=1.17.0",
     "tesseract>=0.1.3",
-    "psycopg[binary]>=3.3.4"
+    "psycopg[binary]>=3.3.4",
+    "pandas>=3.0.4",
 ]
 
 [dependency-groups]
 dev = [
+    "ipykernel>=7.3.0",
     "ruff",
 ]
 
