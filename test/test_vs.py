@@ -1,6 +1,6 @@
 """
 test_legal_rag.py
-Supabase pgvector + OpenAI 임베딩 동작 확인용 단독 테스트.
+Supabase pgvector + OpenAI 임베딩 동작 확인용 단독 테스트. (kb_chunks 스키마)
 
 실행:
     python test_legal_rag.py
@@ -9,12 +9,14 @@ Supabase pgvector + OpenAI 임베딩 동작 확인용 단독 테스트.
     DB_URL=postgresql://postgres.xxxx:[PW]@aws-0-...pooler.supabase.com:5432/postgres
     OPENAI_API_KEY=sk-...
 """
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from dotenv import load_dotenv
 
-load_dotenv()  # ⚠️ legal_rag import 보다 먼저 (OPENAI_API_KEY 로드)
+load_dotenv()  # ⚠️ vs_method import 보다 먼저 (OPENAI_API_KEY 로드)
 
-from vs_method import (
+from src.core.vs_method import (
     get_conn,
     ensure_schema,
     clear_table,
@@ -31,45 +33,64 @@ SAMPLE_LAW = """제3조(대항력 등) ① 임대차는 그 등기가 없는 경
 """
 
 
+def _show(results):
+    for r in results:
+        tag = r.get("law_name") or r.get("doc_title")
+        print(f"  [{r['similarity']}] ({r['authority']}) {tag} {r.get('article') or ''} "
+              f"| {r['content'][:45]}...")
+
+
 def main():
     conn = get_conn()
     print("====연결 성공====")
 
     ensure_schema(conn)
-    print("====스키마 준비 완료 (extension + table + index)====")
+    print("====스키마 준비 완료 (extension + kb_chunks + index)====")
 
     #clear_table(conn)  # 재실행 시 중복 방지 (실데이터 운영 땐 빼세요)
 
     n = ingest_document(
         conn,
         SAMPLE_LAW,
-        base_meta={"law_name": "주택임대차보호법", "source": "law.go.kr"},
-        doc_type="law",
+        {
+            "source_type": "statute",          # → authority 자동 유도(binding)
+            "source_org": "법제처",
+            "doc_title": "주택임대차보호법",
+            "doc_year": 2023,
+            "stage": "both",                   # 대항력(계약 전)·보증금 회수(계약 후) 모두 포함
+            "issue": ["deposit", "opposing_power", "priority_repayment"],
+            "law_name": "주택임대차보호법",
+        },
+        split_preset="law",
     )
     print(f"====적재 완료: {n}개 청크====\n")
 
     # ── 검색 1: 필터 없이 ──
-    print("====쿼리: '전세 보증금 못 받을 때 우선변제 받는 방법'")
-    results = search_similar(
+    print("====쿼리: '전세 보증금 못 받을 때 우선변제 받는 방법' (필터 없음)====")
+    _show(search_similar(
         conn,
         "전세 보증금 못 받을 때 우선변제 받는 방법",
         k=5,
-    )
-    for r in results:
-        m = r["metadata"]
-        print(f"  [{r['similarity']}] {m.get('article')} | {r['content'][:45]}...")
+    ))
 
-    # ── 검색 2: metadata 필터 적용 ──
-    print("\n====쿼리: '대항력' (law_name=주택임대차보호법 필터)====")
-    results = search_similar(
+    # ── 검색 2: 타입 컬럼 필터 (계약 전 + 대항력 쟁점) ──
+    print("\n====쿼리: '대항력을 갖추려면 어떻게 해야 하나' (stage=pre, issues=opposing_power)====")
+    _show(search_similar(
         conn,
         "대항력을 갖추려면 어떻게 해야 하나",
+        stage="pre",
+        issues=["opposing_power"],
         k=3,
-        meta_filter={"law_name": "주택임대차보호법"},
-    )
-    for r in results:
-        m = r["metadata"]
-        print(f"  [{r['similarity']}] {m.get('article')} | {r['content'][:45]}...")
+    ))
+
+    # ── 검색 3: 결론 근거만 (binding) ──
+    print("\n====쿼리: '보증금 우선변제' (authorities=binding)====")
+    _show(search_similar(
+        conn,
+        "보증금 우선변제",
+        authorities=["binding"],
+        k=3,
+    ))
 
     conn.close()
     print("\n====테스트 종료====")
