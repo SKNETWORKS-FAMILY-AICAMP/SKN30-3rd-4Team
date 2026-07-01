@@ -167,6 +167,58 @@ def ingest_document(conn, full_text: str, doc: dict, split_preset: str = "law") 
     conn.commit()
     return len(rows)
 
+def ingest_not_chunks(conn, chunks: list, doc: dict) -> int:
+    """이미 청킹된 청크들을 그대로 적재 (내부 청킹 없음).
+
+    chunks: 미리 나눠 둔 청크 리스트.
+            각 원소는 str 이거나 {"content": ..., 그 외 per-chunk 메타} dict.
+    doc   : 문서 단위 메타 (ingest_document 과 동일 규칙 · 임의 키 보존).
+    """
+    for key in REQUIRED_DOC_KEYS:
+        if not doc.get(key):
+            raise ValueError(f"doc['{key}'] 는 필수입니다.")
+
+    source_type = doc["source_type"]
+    base = {
+        **doc,
+        "source_type": source_type,
+        "authority": doc.get("authority") or AUTHORITY_BY_SOURCE.get(source_type, "reference"),
+        "stage": doc.get("stage", "both"),
+        "issue": doc.get("issue", []),
+    }
+
+    # str / dict 정규화 + 빈 청크 제거
+    norm = []
+    for item in (chunks or []):
+        if isinstance(item, dict):
+            content, extra = item.get("content", ""), {k: v for k, v in item.items() if k != "content"}
+        else:
+            content, extra = item, {}
+        if content and content.strip():
+            norm.append((content, extra))
+    if not norm:
+        return 0
+
+    vectors = embeddings.embed_documents([c for c, _ in norm])  # 배치 임베딩
+
+    rows = []
+    for i, ((content, extra), vec) in enumerate(zip(norm, vectors)):
+        meta = {**base, **extra, "chunk_index": i, "char_len": len(content)}
+        if not meta.get("article"):                      # 지정값 없으면 조항 자동 감지
+            m = re.search(r"제\d+조(?:의\d+)?", content)
+            if m:
+                meta["article"] = m.group(0)
+        meta = {k: v for k, v in meta.items() if v is not None}
+        rows.append((content, str(vec), Json(meta)))
+
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO kb_chunks (content, embedding, metadata) VALUES (%s, %s::vector, %s)",
+            rows,
+        )
+    conn.commit()
+    return len(rows)
+
 
 # ──────────────────────────────────────────────
 # 검색 (코사인 + metadata 필터)
