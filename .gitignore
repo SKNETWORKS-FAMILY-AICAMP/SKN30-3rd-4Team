@@ -26,3 +26,6 @@ desktop.ini
 
 # 주의: data/05_vectordb/ 는 의도적으로 커밋합니다 (재임베딩 비용 절약).
 #       단일 파일 100MB 초과 시 Git LFS 사용을 검토하세요.
+
+# 대용량 체크포인트 (resume용, 커밋 불필요)
+data/01_raw/*_checkpoint.jsonl
