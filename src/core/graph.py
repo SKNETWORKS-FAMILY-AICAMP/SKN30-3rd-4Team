@@ -8,7 +8,9 @@ graph.py
   post subgraph: 쟁점 분류 → 컨텍스트
   공통 파이프라인: retrieve → grade(→쿼리 재작성 루프) → generate → verify(→재생성 루프) → 법적 고지
 
-검색은 vs_method.search_similar(kb_chunks / pgvector) 사용.
+검색은 vs_method.search_similar(pgvector) 사용.
+  ⚠️ 검색 결과는 {**metadata, content, similarity} 형태이며 metadata 키는 문서마다 다르다.
+     (법령: law_name/article, 판례: court/case_no …) → 모든 접근은 .get() 으로 방어.
 멀티턴은 그래프 내부 루프가 아니라 MemorySaver + thread_id 로 상태를 유지하고 매 턴 재호출한다.
 
 설치:
@@ -29,17 +31,16 @@ from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
-from dotenv import load_dotenv
-import os
 
+from dotenv import load_dotenv
 load_dotenv()
 
-import vs_method  # search_similar / get_conn (kb_chunks)
+import vs_method  # search_similar / get_conn
 
 # ──────────────────────────────────────────────
 # LLM / 검색 연결
 # ──────────────────────────────────────────────
-llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, timeout=30, max_retries=2)
 
 MAX_RETRIEVAL_ATTEMPTS = 2
 MAX_VERIFY_ATTEMPTS = 2
@@ -60,6 +61,19 @@ def _llm_json(prompt: str) -> dict:
         return json.loads(raw)
     except json.JSONDecodeError:
         return {}
+
+
+def _cite(h: dict) -> str:
+    """source_type 별 출처 표기 (metadata 키가 문서마다 다르므로 .get 으로 분기)."""
+    st = h.get("source_type")
+    if st in ("statute", "interpretation"):
+        return " ".join(x for x in (h.get("law_name"), h.get("article")) if x) or h.get("doc_title", "")
+    if st == "precedent":
+        return " ".join(x for x in (h.get("court"), h.get("case_no")) if x) or h.get("doc_title", "")
+    if st in ("mediation_case", "counsel_case"):
+        no = h.get("case_no") or h.get("사례번호")
+        return f"{h.get('doc_title','')} {no}".strip() if no else h.get("doc_title", "")
+    return h.get("doc_title", "")  # standard_contract / guide 등
 
 
 # ──────────────────────────────────────────────
@@ -86,7 +100,7 @@ class FactCheckState(TypedDict, total=False):
 
 
 # ══════════════════════════════════════════════
-# 외부 파이프라인 스텁 (남진님 기존 모듈에 연결)
+# 외부 파이프라인 스텁 (기존 모듈에 연결)
 # ══════════════════════════════════════════════
 def run_ocr(document_path: str) -> str:
     # TODO: pdf2image + pytesseract 한글 OCR 파이프라인 연결
@@ -136,8 +150,8 @@ def assess_risk(state: FactCheckState) -> dict:
     ratio = f.get("jeonse_ratio", 0)
     reasons, level = [], "low"
     if ratio >= 0.8:
-        level, r = "high", f"전세가율 {ratio:.0%} (깡통전세 위험 구간)"
-        reasons.append(r)
+        level = "high"
+        reasons.append(f"전세가율 {ratio:.0%} (깡통전세 위험 구간)")
     elif ratio >= 0.7:
         level = "medium"
         reasons.append(f"전세가율 {ratio:.0%} (경계 구간)")
@@ -231,7 +245,10 @@ def retrieve(state: FactCheckState) -> dict:
 
 def grade_documents(state: FactCheckState) -> dict:
     """검색 결과가 질문을 커버하는지 판정 (관련성 평가)."""
-    ctx = "\n".join(f"- ({h['authority']}) {h['content'][:120]}" for h in state["retrieved"])
+    ctx = "\n".join(
+        f"- ({h.get('authority','?')}) {h.get('content','')[:120]}"
+        for h in state["retrieved"]
+    )
     v = _llm_json(
         "검색된 조항이 질문에 답하기에 충분한가?\n"
         'keys: sufficient(bool), gap(부족하면 무엇이 빠졌는지 한 문장).\n\n'
@@ -261,21 +278,24 @@ def rewrite_query(state: FactCheckState) -> dict:
 
 def generate(state: FactCheckState) -> dict:
     """근거 기반 답변 생성. 결론은 binding, 사례는 persuasive 로 층 분리."""
-    binding = [h for h in state["retrieved"] if h["authority"] == "binding"]
-    persuasive = [h for h in state["retrieved"] if h["authority"] == "persuasive"]
-    ref = [h for h in state["retrieved"] if h["authority"] == "reference"]
+    retrieved = state["retrieved"]
+    binding = [h for h in retrieved if h.get("authority") == "binding"]
+    persuasive = [h for h in retrieved if h.get("authority") == "persuasive"]
+    ref = [h for h in retrieved if h.get("authority") == "reference"]
 
     def fmt(hs):
+        # source_type 별 출처 표기(_cite): 법령→법령명·조항, 판례→법원·사건번호, 사례→문서명
         return "\n".join(
-            f"- {h.get('law_name') or h['doc_title']} {h.get('article') or ''}: {h['content'][:200]}"
-            for h in hs) or "(없음)"
+            f"- {_cite(h)}: {h.get('content','')[:200]}" for h in hs
+        ) or "(없음)"
 
     risk = state.get("risk_result")
     risk_txt = f"\n[위험 진단] {risk['level']} / {'; '.join(risk['reasons'])}" if risk else ""
 
     answer = llm.invoke(
         "너는 세입자를 돕는 법률 정보 도우미다. 아래 근거만 사용해 답하라.\n"
-        "규칙: 결론의 법적 근거는 반드시 [법령·판례]에서 인용(법령명·조항 명시). "
+        "규칙: 결론의 법적 근거는 반드시 [법령·판례]에서 인용하고 출처"
+        "(법령명·조항 또는 법원·사건번호)를 명시하라. "
         "[사례]는 '이런 경우 이렇게 판단된 적 있다'는 참고로만. 근거에 없는 내용은 단정하지 말 것.\n"
         f"{risk_txt}\n\n"
         f"[법령·판례]\n{fmt(binding)}\n\n[사례]\n{fmt(persuasive)}\n\n[실무 참고]\n{fmt(ref)}\n\n"
@@ -286,7 +306,7 @@ def generate(state: FactCheckState) -> dict:
 
 def verify(state: FactCheckState) -> dict:
     """답변이 검색 근거에 충실한지(환각 여부) 검증."""
-    ctx = "\n".join(f"- {h['content'][:200]}" for h in state["retrieved"])
+    ctx = "\n".join(f"- {h.get('content','')[:200]}" for h in state["retrieved"])
     v = _llm_json(
         "답변이 아래 근거에 충실한가? 근거에 없는 사실 단정이 있으면 faithful=false.\n"
         'keys: faithful(bool), problem(문제 있으면 한 문장).\n\n'
@@ -381,6 +401,7 @@ def run_turn(thread_id: str, question: str, *, stage: str,
 
 
 if __name__ == "__main__":
+
     # 계약 후 · 보증금 분쟁
     print(run_turn("user-42", "집주인이 보증금을 안 돌려줘요", stage="post"))
     # 같은 thread → 세션 유지 (stage 기억)
